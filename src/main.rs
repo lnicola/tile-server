@@ -31,7 +31,6 @@ async fn index(
         }
 
         let tile_extent = config.tile_grid.tile_extent(x, y, z);
-        dbg!(&tile_extent);
         let dataset = web::block(move || Dataset::open(Path::new(&file))).await?;
         let geo_transform = dataset.geo_transform()?;
         let raster_size = dataset.raster_size();
@@ -117,17 +116,23 @@ async fn index(
                 config.tile_height as isize,
                 4,
             )?;
+            let mut alpha = vec![255; output_size.0 * output_size.1];
             for i in 1..=3 {
                 let buf = dataset.rasterband(i)?.read_as::<u8>(
                     input_position,
                     input_size,
                     output_size,
                 )?;
+                buf.data.iter().zip(alpha.iter_mut()).for_each(|(&p, a)| {
+                    if p == 0 {
+                        *a = 0;
+                    }
+                });
                 out.rasterband(i)?
                     .write(output_position, output_size, &buf)?;
             }
 
-            let buffer = Buffer::new(output_size, vec![255; output_size.0 * output_size.1]);
+            let buffer = Buffer::new(output_size, alpha);
             out.rasterband(4)?
                 .write(output_position, output_size, &buffer)?;
 
@@ -150,6 +155,7 @@ async fn main() -> io::Result<()> {
         tile_width: 256,
         tile_height: 256,
     };
+
     HttpServer::new(move || {
         App::new()
             .data(config.clone())
