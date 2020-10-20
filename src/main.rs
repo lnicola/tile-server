@@ -159,12 +159,7 @@ async fn main() -> io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .data(config.clone())
-            .wrap(
-                Cors::new()
-                    .send_wildcard()
-                    .allowed_methods(vec!["GET"])
-                    .finish(),
-            )
+            .wrap(Cors::default().send_wildcard().allowed_methods(vec!["GET"]))
             .service(index)
     })
     .bind("127.0.0.1:3011")?

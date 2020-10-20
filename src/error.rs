@@ -1,30 +1,31 @@
+use std::ffi::NulError;
 use std::fmt::{self, Display, Formatter};
 use std::{error, io};
 
 use actix_web::error::BlockingError;
 use actix_web::http::StatusCode;
 use actix_web::ResponseError;
-use failure::Fail;
+use gdal::errors::GdalError;
 
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    NulError(std::ffi::NulError),
-    Gdal(Box<dyn error::Error + Send + Sync>),
+    NulError(NulError),
+    Gdal(GdalError),
     Blocking(Box<dyn error::Error + Send + Sync>),
     OutsideBounds,
     Infallible(std::convert::Infallible),
 }
 
-impl From<std::ffi::NulError> for Error {
-    fn from(v: std::ffi::NulError) -> Self {
+impl From<NulError> for Error {
+    fn from(v: NulError) -> Self {
         Error::NulError(v)
     }
 }
 
-impl From<gdal::errors::Error> for Error {
-    fn from(v: gdal::errors::Error) -> Self {
-        Error::Gdal(Box::new(v.compat()))
+impl From<GdalError> for Error {
+    fn from(v: GdalError) -> Self {
+        Error::Gdal(v)
     }
 }
 
@@ -67,7 +68,7 @@ impl error::Error for Error {
         match self {
             Error::Io(e) => Some(e),
             Error::NulError(e) => Some(e),
-            Error::Gdal(e) => Some(e.as_ref()),
+            Error::Gdal(e) => Some(e),
             Error::Blocking(e) => Some(e.as_ref()),
             Error::OutsideBounds => None,
             Error::Infallible(e) => Some(e),
