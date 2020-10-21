@@ -162,7 +162,7 @@ async fn main() -> io::Result<()> {
             .wrap(Cors::default().send_wildcard().allowed_methods(vec!["GET"]))
             .service(index)
     })
-    .bind("127.0.0.1:3011")?
+    .bind("0.0.0.0:3011")?
     .run()
     .await
 }
