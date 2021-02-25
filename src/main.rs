@@ -9,7 +9,6 @@ use actix_web::{get, web, App, HttpServer};
 use gdal::raster::Buffer;
 use gdal::spatial_ref::{CoordTransform, SpatialRef};
 use gdal::{Dataset, Driver};
-use proj::Proj;
 use serde::Serialize;
 
 use self::config::Config;
@@ -49,19 +48,13 @@ fn transform_extent(extent: &Extent, transform: &CoordTransform) -> Result<Exten
     Ok(extent)
 }
 
-fn get_projection_info(mut spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>, Error> {
-    if spatial_ref.auth_code().is_err() {
-        let _ = spatial_ref.auto_identify_epsg();
-    }
-    let epsg_code = spatial_ref.auth_code().unwrap();
-    // let proj = Proj::new(&projection).unwrap();
-    let proj = Proj::new(&format!("EPSG:{}", epsg_code)).unwrap();
-    let (projection_usage, projection_name) = proj.area_of_use()?;
-    let projection_usage = projection_usage.map(|projection_usage| Extent {
-        xmin: projection_usage.west,
-        xmax: projection_usage.east,
-        ymin: projection_usage.south,
-        ymax: projection_usage.north,
+fn get_projection_info(spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>, Error> {
+    let area_of_use = spatial_ref.area_of_use();
+    let projection_usage = area_of_use.as_ref().map(|area_of_use| Extent {
+        xmin: area_of_use.west_lon_degree,
+        xmax: area_of_use.east_lon_degree,
+        ymin: area_of_use.south_lat_degree,
+        ymax: area_of_use.north_lat_degree,
     });
 
     let wgs84_srs = SpatialRef::from_epsg(4326)?;
@@ -74,7 +67,7 @@ fn get_projection_info(mut spatial_ref: SpatialRef) -> Result<Option<ProjectionI
         wkt: spatial_ref.to_pretty_wkt()?,
         proj4: spatial_ref.to_proj4()?,
         usage: projection_usage,
-        name: projection_name,
+        name: area_of_use.map(|area_of_use| area_of_use.name),
         bounds: projection_bounds,
     };
     Ok(Some(projection_info))

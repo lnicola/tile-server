@@ -6,14 +6,12 @@ use actix_web::error::BlockingError;
 use actix_web::http::StatusCode;
 use actix_web::ResponseError;
 use gdal::errors::GdalError;
-use proj::ProjError;
 
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     NulError(NulError),
     Gdal(GdalError),
-    Proj(ProjError),
     Blocking(Box<dyn error::Error + Send + Sync>),
     OutsideBounds,
     Infallible(std::convert::Infallible),
@@ -28,12 +26,6 @@ impl From<NulError> for Error {
 impl From<GdalError> for Error {
     fn from(v: GdalError) -> Self {
         Error::Gdal(v)
-    }
-}
-
-impl From<ProjError> for Error {
-    fn from(v: ProjError) -> Self {
-        Error::Proj(v)
     }
 }
 
@@ -64,7 +56,6 @@ impl Display for Error {
             Error::Io(e) => e.fmt(f),
             Error::NulError(e) => e.fmt(f),
             Error::Gdal(e) => e.fmt(f),
-            Error::Proj(e) => e.fmt(f),
             Error::Blocking(e) => e.fmt(f),
             Error::OutsideBounds => f.write_str("tile is outside image bounds"),
             Error::Infallible(e) => e.fmt(f),
@@ -78,7 +69,6 @@ impl error::Error for Error {
             Error::Io(e) => Some(e),
             Error::NulError(e) => Some(e),
             Error::Gdal(e) => Some(e),
-            Error::Proj(e) => Some(e),
             Error::Blocking(e) => Some(e.as_ref()),
             Error::OutsideBounds => None,
             Error::Infallible(e) => Some(e),
