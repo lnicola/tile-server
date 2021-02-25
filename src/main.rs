@@ -59,6 +59,7 @@ fn get_projection_info(spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>
 
     let wgs84_srs = SpatialRef::from_epsg(4326)?;
     let transform = CoordTransform::new(&wgs84_srs, &spatial_ref)?;
+    let name = spatial_ref.name()?;
     let projection_bounds = projection_usage
         .as_ref()
         .map(|extent| transform_extent(extent, &transform))
@@ -67,7 +68,7 @@ fn get_projection_info(spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>
         wkt: spatial_ref.to_pretty_wkt()?,
         proj4: spatial_ref.to_proj4()?,
         usage: projection_usage,
-        name: area_of_use.map(|area_of_use| area_of_use.name),
+        name: Some(name),
         bounds: projection_bounds,
     };
     Ok(Some(projection_info))
