@@ -1,4 +1,6 @@
-#[derive(Clone, Debug)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, Serialize)]
 pub struct Extent {
     pub xmin: f64,
     pub ymin: f64,

@@ -4,9 +4,13 @@ use std::path::Path;
 
 use actix_cors::Cors;
 use actix_files::NamedFile;
+use actix_web::web::Json;
 use actix_web::{get, web, App, HttpServer};
 use gdal::raster::Buffer;
+use gdal::spatial_ref::{CoordTransform, SpatialRef};
 use gdal::{Dataset, Driver};
+use proj::Proj;
+use serde::Serialize;
 
 use self::config::Config;
 use self::error::Error;
@@ -16,8 +20,95 @@ mod config;
 mod error;
 mod tile_grid;
 
+#[derive(Serialize)]
+struct ImageInfo {
+    extent: Extent,
+    projection_info: ProjectionInfo,
+}
+
+#[derive(Serialize)]
+struct ProjectionInfo {
+    wkt: String,
+    proj4: String,
+    usage: Option<Extent>,
+    name: Option<String>,
+    bounds: Option<Extent>,
+}
+
+fn transform_extent(extent: &Extent, transform: &CoordTransform) -> Result<Extent, Error> {
+    let mut x = [extent.ymin, extent.ymax];
+    let mut y = [extent.xmin, extent.xmax];
+    let mut z = [0.0, 0.0];
+    transform.transform_coords(&mut x[..], &mut y[..], &mut z[..])?;
+    let extent = Extent {
+        xmin: x[0],
+        ymin: y[0],
+        xmax: x[1],
+        ymax: y[1],
+    };
+    Ok(extent)
+}
+
+fn get_projection_info(mut spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>, Error> {
+    if spatial_ref.auth_code().is_err() {
+        let _ = spatial_ref.auto_identify_epsg();
+    }
+    let epsg_code = spatial_ref.auth_code().unwrap();
+    // let proj = Proj::new(&projection).unwrap();
+    let proj = Proj::new(&format!("EPSG:{}", epsg_code)).unwrap();
+    let (projection_usage, projection_name) = proj.area_of_use()?;
+    let projection_usage = projection_usage.map(|projection_usage| Extent {
+        xmin: projection_usage.west,
+        xmax: projection_usage.east,
+        ymin: projection_usage.south,
+        ymax: projection_usage.north,
+    });
+
+    let wgs84_srs = SpatialRef::from_epsg(4326)?;
+    let transform = CoordTransform::new(&wgs84_srs, &spatial_ref)?;
+    let projection_bounds = projection_usage
+        .as_ref()
+        .map(|extent| transform_extent(extent, &transform))
+        .transpose()?;
+    let projection_info = ProjectionInfo {
+        wkt: spatial_ref.to_pretty_wkt()?,
+        proj4: spatial_ref.to_proj4()?,
+        usage: projection_usage,
+        name: projection_name,
+        bounds: projection_bounds,
+    };
+    Ok(Some(projection_info))
+}
+
+#[get("info/{file}")]
+async fn info(web::Path(file): web::Path<String>) -> Result<Json<ImageInfo>, Error> {
+    let dataset = web::block(move || Dataset::open(Path::new(&file))).await?;
+    let geo_transform = dataset.geo_transform()?;
+    let raster_size = dataset.raster_size();
+    let (x_min, x_size, y_max, y_size) = (
+        geo_transform[0],
+        geo_transform[1],
+        geo_transform[3],
+        geo_transform[5],
+    );
+    let extent = Extent {
+        xmin: x_min,
+        ymin: y_max + y_size * raster_size.1 as f64,
+        xmax: x_min + x_size * raster_size.0 as f64,
+        ymax: y_max,
+    };
+    let projection = dataset.projection();
+    let spatial_ref = dataset.spatial_ref()?;
+
+    let info = ImageInfo {
+        extent,
+        projection_info: get_projection_info(spatial_ref)?.unwrap(),
+    };
+    Ok(Json(info))
+}
+
 #[get("tile/{file}/{z}/{x}/{y}.png")]
-async fn index(
+async fn tile(
     web::Path((file, z, x, mut y)): web::Path<(String, u8, u32, u32)>,
     config: web::Data<Config>,
 ) -> Result<NamedFile, Error> {
@@ -118,7 +209,7 @@ async fn index(
             )?;
             let mut alpha = vec![255; output_size.0 * output_size.1];
             for i in 1..=3 {
-                let buf = dataset.rasterband(i)?.read_as::<u8>(
+                let buf = dataset.rasterband(1)?.read_as::<u8>(
                     input_position,
                     input_size,
                     output_size,
@@ -149,8 +240,14 @@ async fn index(
 #[actix_web::main]
 async fn main() -> io::Result<()> {
     std::fs::create_dir_all("cache")?;
+    let epsg_32628_extent = Extent {
+        xmin: 166021.44308053772,
+        ymin: 0.0,
+        xmax: 534994.655061136,
+        ymax: 9329005.182447437,
+    };
     let config = Config {
-        tile_grid: TileGrid::web_mercator(),
+        tile_grid: TileGrid::new(epsg_32628_extent), // TileGrid::web_mercator(),
         reverse_y: false,
         tile_width: 256,
         tile_height: 256,
@@ -160,7 +257,8 @@ async fn main() -> io::Result<()> {
         App::new()
             .data(config.clone())
             .wrap(Cors::default().send_wildcard().allowed_methods(vec!["GET"]))
-            .service(index)
+            .service(tile)
+            .service(info)
     })
     .bind("0.0.0.0:3011")?
     .run()
