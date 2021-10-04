@@ -110,6 +110,7 @@ async fn tile(
     let file_name_clone = file_name.clone();
     let exists =
         web::block::<_, _, Infallible>(move || Ok(Path::new(&file_name_clone).exists())).await?;
+    let exists = false;
     if !exists {
         if config.reverse_y {
             y = (1 << z) - 1 - y;
@@ -203,10 +204,11 @@ async fn tile(
             )?;
             let mut alpha = vec![255; output_size.0 * output_size.1];
             for i in 1..=3 {
-                let buf = dataset.rasterband(1)?.read_as::<u8>(
+                let buf = dataset.rasterband(i)?.read_as::<u8>(
                     input_position,
                     input_size,
                     output_size,
+                    None,
                 )?;
                 buf.data.iter().zip(alpha.iter_mut()).for_each(|(&p, a)| {
                     if p == 0 {
@@ -241,7 +243,9 @@ async fn main() -> io::Result<()> {
         ymax: 9329005.182447437,
     };
     let config = Config {
-        tile_grid: TileGrid::new(epsg_32628_extent), // TileGrid::web_mercator(),
+        tile_grid: TileGrid::web_mercator(),
+        // tile_grid: TileGrid::new(epsg_32628_extent), // TileGrid::web_mercator(),
+        // reverse_y: true,
         reverse_y: false,
         tile_width: 256,
         tile_height: 256,
