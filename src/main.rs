@@ -91,7 +91,7 @@ async fn info(web::Path(file): web::Path<String>) -> Result<Json<ImageInfo>, Err
         xmax: x_min + x_size * raster_size.0 as f64,
         ymax: y_max,
     };
-    let projection = dataset.projection();
+    let _projection = dataset.projection();
     let spatial_ref = dataset.spatial_ref()?;
 
     let info = ImageInfo {
@@ -108,7 +108,7 @@ async fn tile(
 ) -> Result<NamedFile, Error> {
     let file_name = format!("cache/{}_{}_{}_{}.png", file, z, x, y);
     let file_name_clone = file_name.clone();
-    let exists =
+    let _exists =
         web::block::<_, _, Infallible>(move || Ok(Path::new(&file_name_clone).exists())).await?;
     let exists = false;
     if !exists {
@@ -236,7 +236,7 @@ async fn tile(
 #[actix_web::main]
 async fn main() -> io::Result<()> {
     std::fs::create_dir_all("cache")?;
-    let epsg_32628_extent = Extent {
+    let _epsg_32628_extent = Extent {
         xmin: 166021.44308053772,
         ymin: 0.0,
         xmax: 534994.655061136,
