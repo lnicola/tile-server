@@ -30,6 +30,8 @@ jobs:
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v1
+      with:
+        key: with-lld
 
     - name: Fetch
       uses: actions-rs/cargo@v1
