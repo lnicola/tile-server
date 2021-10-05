@@ -28,6 +28,9 @@ jobs:
           override: true
           components: rustfmt, clippy
 
+    - name: Install libgdal-dev
+      run: sudo apt-get install libgdal-dev
+
     - name: Fetch
       uses: actions-rs/cargo@v1
       with:
