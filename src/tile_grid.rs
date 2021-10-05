@@ -22,17 +22,16 @@ impl TileGrid {
         let tile_w = (self.extent.xmax - self.extent.xmin) / (1 << z) as f64;
         let tile_h = (self.extent.ymax - self.extent.ymin) / (1 << z) as f64;
 
-        let tile_extent = Extent {
+        Extent {
             xmin: self.extent.xmin + tile_w * x as f64,
             ymin: self.extent.ymin + tile_h * y as f64,
             xmax: self.extent.xmin + tile_w * (x + 1) as f64,
             ymax: self.extent.ymin + tile_h * (y + 1) as f64,
-        };
-        tile_extent
+        }
     }
 
     pub fn web_mercator() -> Self {
-        let origin_shift = 20037508.3427892480;
+        let origin_shift = 20_037_508.342_789_248;
         Self::new(Extent {
             xmin: -origin_shift,
             ymin: -origin_shift,
