@@ -10,7 +10,7 @@ use gdal::errors::GdalError;
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    NulError(NulError),
+    Nul(NulError),
     Gdal(GdalError),
     Blocking(Box<dyn error::Error + Send + Sync>),
     OutsideBounds,
@@ -19,7 +19,7 @@ pub enum Error {
 
 impl From<NulError> for Error {
     fn from(v: NulError) -> Self {
-        Error::NulError(v)
+        Error::Nul(v)
     }
 }
 
@@ -54,7 +54,7 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => e.fmt(f),
-            Error::NulError(e) => e.fmt(f),
+            Error::Nul(e) => e.fmt(f),
             Error::Gdal(e) => e.fmt(f),
             Error::Blocking(e) => e.fmt(f),
             Error::OutsideBounds => f.write_str("tile is outside image bounds"),
@@ -67,7 +67,7 @@ impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
-            Error::NulError(e) => Some(e),
+            Error::Nul(e) => Some(e),
             Error::Gdal(e) => Some(e),
             Error::Blocking(e) => Some(e.as_ref()),
             Error::OutsideBounds => None,
