@@ -25,8 +25,8 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-    - name: Install libgdal-dev
-      run: sudo apt-get install libgdal-dev
+    - name: Install libgdal-dev and lld
+      run: sudo apt-get install libgdal-dev lld
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v1
