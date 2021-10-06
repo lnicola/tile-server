@@ -37,9 +37,6 @@ jobs:
       - name: Format
         run: cargo fmt -- --check
 
-      - name: Check
-        run: cargo check
-
       - name: Build
         run: cargo build
 
