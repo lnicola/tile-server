@@ -1,15 +1,17 @@
-use std::convert::Infallible;
-use std::io;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
-use actix_cors::Cors;
-use actix_files::NamedFile;
-use actix_web::web::Json;
-use actix_web::{get, web, App, HttpServer};
+use axum::extract::Extension;
+use axum::handler::get;
+use axum::response::IntoResponse;
+use axum::{extract, AddExtensionLayer, Json, Router, Server};
 use gdal::raster::Buffer;
 use gdal::spatial_ref::{CoordTransform, SpatialRef};
 use gdal::{Dataset, Driver};
 use serde::Serialize;
+use tokio::runtime::Runtime;
+use tokio::task;
+use tower_http::trace::TraceLayer;
 
 use self::config::Config;
 use self::error::Error;
@@ -74,9 +76,8 @@ fn get_projection_info(spatial_ref: SpatialRef) -> Result<Option<ProjectionInfo>
     Ok(Some(projection_info))
 }
 
-#[get("info/{file}")]
-async fn info(web::Path(file): web::Path<String>) -> Result<Json<ImageInfo>, Error> {
-    let dataset = web::block(move || Dataset::open(Path::new(&file))).await?;
+async fn info(extract::Path(file): extract::Path<String>) -> Result<Json<ImageInfo>, Error> {
+    let dataset = task::block_in_place(move || Dataset::open(Path::new(&file)))?;
     let geo_transform = dataset.geo_transform()?;
     let raster_size = dataset.raster_size();
     let (x_min, x_size, y_max, y_size) = (
@@ -101,15 +102,13 @@ async fn info(web::Path(file): web::Path<String>) -> Result<Json<ImageInfo>, Err
     Ok(Json(info))
 }
 
-#[get("tile/{file}/{z}/{x}/{y}.png")]
 async fn tile(
-    web::Path((file, z, x, mut y)): web::Path<(String, u8, u32, u32)>,
-    config: web::Data<Config>,
-) -> Result<NamedFile, Error> {
+    extract::Path((file, z, x, mut y)): extract::Path<(String, u8, u32, u32)>,
+    config: Extension<Config>,
+) -> Result<impl IntoResponse, Error> {
     let file_name = format!("cache/{}_{}_{}_{}.png", file, z, x, y);
     let file_name_clone = file_name.clone();
-    let _exists =
-        web::block::<_, _, Infallible>(move || Ok(Path::new(&file_name_clone).exists())).await?;
+    let _exists = task::block_in_place(move || Path::new(&file_name_clone).exists());
     let exists = false;
     if !exists {
         if config.reverse_y {
@@ -117,7 +116,7 @@ async fn tile(
         }
 
         let tile_extent = config.tile_grid.tile_extent(x, y, z);
-        let dataset = web::block(move || Dataset::open(Path::new(&file))).await?;
+        let dataset = task::block_in_place(move || Dataset::open(Path::new(&file)))?;
         let geo_transform = dataset.geo_transform()?;
         let raster_size = dataset.raster_size();
         let (x_min, x_size, y_max, y_size) = (
@@ -195,7 +194,7 @@ async fn tile(
         let output_size = (config.tile_width - ol - or, config.tile_height - ot - ob);
 
         let file_name_clone = file_name.clone();
-        web::block::<_, _, Error>(move || {
+        task::block_in_place::<_, Result<_, Error>>(move || {
             let out = Driver::get("MEM")?.create(
                 "",
                 config.tile_width as isize,
@@ -226,15 +225,28 @@ async fn tile(
             let png_driver = Driver::get("PNG")?;
             out.create_copy(&png_driver, &file_name_clone)?;
             Ok(())
-        })
-        .await?;
+        })?;
     }
-    let file = NamedFile::open(file_name)?;
+    let file = tokio::fs::read(file_name).await?;
     Ok(file)
 }
 
-#[actix_web::main]
-async fn main() -> io::Result<()> {
+async fn run() -> Result<(), Error> {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "tile_server=info,tower_http=debug")
+    }
+    tracing_subscriber::fmt::init();
+
+    let address = "127.0.0.1";
+    let port = 3011;
+
+    let addr = SocketAddr::new(
+        address.parse::<IpAddr>().unwrap(),
+        // .map_err(|e| Error::from_addr_parse(e, address.clone()))?,
+        port,
+    );
+    tracing::info!("Listening on http://{}", addr);
+
     std::fs::create_dir_all("cache")?;
     let _epsg_32628_extent = Extent {
         xmin: 166021.44308053772,
@@ -251,14 +263,21 @@ async fn main() -> io::Result<()> {
         tile_height: 256,
     };
 
-    HttpServer::new(move || {
-        App::new()
-            .data(config.clone())
-            .wrap(Cors::default().send_wildcard().allowed_methods(vec!["GET"]))
-            .service(tile)
-            .service(info)
-    })
-    .bind("0.0.0.0:3011")?
-    .run()
-    .await
+    let app = Router::new()
+        .route("/tile/:file/:z/:x/:y", get(tile))
+        .route("/info/:file", get(info))
+        .layer(AddExtensionLayer::new(config))
+        .layer(TraceLayer::new_for_http());
+
+    let listener = std::net::TcpListener::bind(&addr)?;
+
+    let server = Server::from_tcp(listener)?
+        .tcp_nodelay(true)
+        .serve(app.into_make_service());
+    return Ok(server.await?);
+}
+
+fn main() {
+    let rt = Runtime::new().expect("cannot start runtime");
+    rt.block_on(async move { run().await }).unwrap();
 }
