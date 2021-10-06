@@ -2,17 +2,19 @@ use std::ffi::NulError;
 use std::fmt::{self, Display, Formatter};
 use std::{error, io};
 
-use actix_web::error::BlockingError;
-use actix_web::http::StatusCode;
-use actix_web::ResponseError;
+use axum::body::HttpBody;
+use axum::response::IntoResponse;
 use gdal::errors::GdalError;
+use hyper::{Body, Response, StatusCode};
+use tokio::task::JoinError;
 
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     Nul(NulError),
     Gdal(GdalError),
-    Blocking(Box<dyn error::Error + Send + Sync>),
+    Hyper(hyper::Error),
+    Join(JoinError),
     OutsideBounds,
     Infallible(std::convert::Infallible),
 }
@@ -29,21 +31,23 @@ impl From<GdalError> for Error {
     }
 }
 
-impl<T: fmt::Debug + Send + Sync + 'static> From<BlockingError<T>> for Error
-where
-    Error: From<T>,
-{
-    fn from(v: BlockingError<T>) -> Self {
-        Error::Blocking(Box::new(v))
-    }
-}
-
 impl From<io::Error> for Error {
     fn from(v: io::Error) -> Self {
         Error::Io(v)
     }
 }
 
+impl From<hyper::Error> for Error {
+    fn from(v: hyper::Error) -> Self {
+        Error::Hyper(v)
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(v: JoinError) -> Self {
+        Error::Join(v)
+    }
+}
 impl From<std::convert::Infallible> for Error {
     fn from(v: std::convert::Infallible) -> Self {
         Error::Infallible(v)
@@ -56,7 +60,8 @@ impl Display for Error {
             Error::Io(e) => e.fmt(f),
             Error::Nul(e) => e.fmt(f),
             Error::Gdal(e) => e.fmt(f),
-            Error::Blocking(e) => e.fmt(f),
+            Error::Hyper(e) => e.fmt(f),
+            Error::Join(e) => e.fmt(f),
             Error::OutsideBounds => f.write_str("tile is outside image bounds"),
             Error::Infallible(e) => e.fmt(f),
         }
@@ -69,18 +74,28 @@ impl error::Error for Error {
             Error::Io(e) => Some(e),
             Error::Nul(e) => Some(e),
             Error::Gdal(e) => Some(e),
-            Error::Blocking(e) => Some(e.as_ref()),
+            Error::Hyper(e) => Some(e),
+            Error::Join(e) => Some(e),
             Error::OutsideBounds => None,
             Error::Infallible(e) => Some(e),
         }
     }
 }
 
-impl ResponseError for Error {
-    fn status_code(&self) -> StatusCode {
+impl IntoResponse for Error {
+    type Body = hyper::Body;
+    type BodyError = <Self::Body as HttpBody>::Error;
+
+    fn into_response(self) -> Response<Body> {
         match self {
-            Error::OutsideBounds => StatusCode::NOT_FOUND,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::OutsideBounds => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap(),
+            _ => Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap(),
         }
     }
 }
