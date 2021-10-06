@@ -244,7 +244,7 @@ async fn main() -> io::Result<()> {
     };
     let config = Config {
         tile_grid: TileGrid::web_mercator(),
-        // tile_grid: TileGrid::new(epsg_32628_extent), // TileGrid::web_mercator(),
+        // tile_grid: TileGrid::new(epsg_32628_extent),
         // reverse_y: true,
         reverse_y: false,
         tile_width: 256,
