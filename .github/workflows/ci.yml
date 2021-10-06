@@ -8,59 +8,43 @@ on:
 
 jobs:
   build:
-
     name: Build
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v1
 
-    - name: Checkout
-      uses: actions/checkout@v1
-
-    - name: Install toolchain
-      uses: actions-rs/toolchain@v1
-      with:
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
           toolchain: stable
           profile: minimal
           override: true
           components: rustfmt, clippy
 
-    - name: Install libgdal-dev and lld
-      run: sudo apt-get install libgdal-dev lld
+      - name: Install libgdal-dev and lld
+        run: sudo apt-get install libgdal-dev lld
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v1
-      with:
-        key: with-lld
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v1
+        with:
+          key: with-lld
 
-    - name: Fetch
-      uses: actions-rs/cargo@v1
-      with:
-        command: fetch
+      - name: Fetch
+        run: cargo fetch
 
-    - name: Format
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
+      - name: Format
+        run: cargo fmt -- --check
 
-    - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
+      - name: Check
+        run: cargo check
 
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
+      - name: Build
+        run: cargo build
 
-    - name: Clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: -- -D warnings
+      - name: Clippy
+        run: cargo clippy -- -D warnings
 
-    - name: Test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
+      - name: Test
+        run: cargo test
