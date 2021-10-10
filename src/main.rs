@@ -1,6 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
+use axum::body::HttpBody;
 use axum::extract::Extension;
 use axum::handler::get;
 use axum::response::IntoResponse;
@@ -8,6 +9,7 @@ use axum::{extract, AddExtensionLayer, Json, Router, Server};
 use gdal::raster::Buffer;
 use gdal::spatial_ref::{CoordTransform, SpatialRef};
 use gdal::{Dataset, Driver};
+use hyper::StatusCode;
 use serde::Serialize;
 use tokio::runtime::Runtime;
 use tokio::task;
@@ -100,6 +102,22 @@ async fn info(extract::Path(file): extract::Path<String>) -> Result<Json<ImageIn
         projection_info: get_projection_info(spatial_ref)?.unwrap(),
     };
     Ok(Json(info))
+}
+
+struct Png(Vec<u8>);
+
+impl IntoResponse for Png {
+    type Body = hyper::Body;
+    type BodyError = <Self::Body as HttpBody>::Error;
+
+    fn into_response(self) -> hyper::Response<Self::Body> {
+        hyper::Response::builder()
+            .status(StatusCode::FOUND)
+            .header("Content-Type", "image/png")
+            .header("Content-Length", self.0.len())
+            .body(self.0.into())
+            .unwrap()
+    }
 }
 
 async fn tile(
@@ -228,7 +246,7 @@ async fn tile(
         })?;
     }
     let file = tokio::fs::read(file_name).await?;
-    Ok(file)
+    Ok(Png(file))
 }
 
 async fn run() -> Result<(), Error> {
