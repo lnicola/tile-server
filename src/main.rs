@@ -241,7 +241,7 @@ async fn tile(
                 .write(output_position, output_size, &buffer)?;
 
             let png_driver = Driver::get("PNG")?;
-            out.create_copy(&png_driver, &file_name_clone)?;
+            out.create_copy(&png_driver, &file_name_clone, &[])?;
             Ok(())
         })?;
     }
