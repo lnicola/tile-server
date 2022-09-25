@@ -2,10 +2,9 @@ use std::ffi::NulError;
 use std::fmt::{self, Display, Formatter};
 use std::{error, io};
 
-use axum::body::HttpBody;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use gdal::errors::GdalError;
-use hyper::{Body, Response, StatusCode};
+use hyper::StatusCode;
 use tokio::task::JoinError;
 
 #[derive(Debug)]
@@ -83,19 +82,10 @@ impl error::Error for Error {
 }
 
 impl IntoResponse for Error {
-    type Body = hyper::Body;
-    type BodyError = <Self::Body as HttpBody>::Error;
-
-    fn into_response(self) -> Response<Body> {
+    fn into_response(self) -> Response {
         match self {
-            Error::OutsideBounds => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::empty())
-                .unwrap(),
-            _ => Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap(),
+            Error::OutsideBounds => (StatusCode::NOT_FOUND, ()).into_response(),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, ()).into_response(),
         }
     }
 }

@@ -1,11 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
-use axum::body::HttpBody;
+use axum::body::{self, Full};
 use axum::extract::Extension;
-use axum::handler::get;
-use axum::response::IntoResponse;
-use axum::{extract, AddExtensionLayer, Json, Router, Server};
+use axum::http::Method;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{extract, Json, Router, Server};
 use gdal::raster::Buffer;
 use gdal::spatial_ref::{CoordTransform, SpatialRef};
 use gdal::{Dataset, Driver};
@@ -13,6 +14,7 @@ use hyper::StatusCode;
 use serde::Serialize;
 use tokio::runtime::Runtime;
 use tokio::task;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use self::config::Config;
@@ -107,15 +109,12 @@ async fn info(extract::Path(file): extract::Path<String>) -> Result<Json<ImageIn
 struct Png(Vec<u8>);
 
 impl IntoResponse for Png {
-    type Body = hyper::Body;
-    type BodyError = <Self::Body as HttpBody>::Error;
-
-    fn into_response(self) -> hyper::Response<Self::Body> {
-        hyper::Response::builder()
-            .status(StatusCode::FOUND)
+    fn into_response(self) -> Response {
+        Response::builder()
+            .status(StatusCode::OK)
             .header("Content-Type", "image/png")
             .header("Content-Length", self.0.len())
-            .body(self.0.into())
+            .body(body::boxed(Full::from(self.0)))
             .unwrap()
     }
 }
@@ -126,8 +125,8 @@ async fn tile(
 ) -> Result<impl IntoResponse, Error> {
     let file_name = format!("cache/{}_{}_{}_{}.png", file, z, x, y);
     let file_name_clone = file_name.clone();
-    let _exists = task::block_in_place(move || Path::new(&file_name_clone).exists());
-    let exists = false;
+    let exists = task::block_in_place(move || Path::new(&file_name_clone).exists());
+    // let exists = false;
     if !exists {
         if config.reverse_y {
             y = (1 << z) - 1 - y;
@@ -284,8 +283,15 @@ async fn run() -> Result<(), Error> {
     let app = Router::new()
         .route("/tile/:file/:z/:x/:y", get(tile))
         .route("/info/:file", get(info))
-        .layer(AddExtensionLayer::new(config))
-        .layer(TraceLayer::new_for_http());
+        .layer(Extension(config))
+        .layer(TraceLayer::new_for_http())
+        .layer(
+            CorsLayer::new()
+                // allow `GET` and `POST` when accessing the resource
+                .allow_methods([Method::GET, Method::POST])
+                // allow requests from any origin
+                .allow_origin(Any),
+        );
 
     let listener = std::net::TcpListener::bind(&addr)?;
 
